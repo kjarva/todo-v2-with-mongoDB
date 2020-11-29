@@ -12,7 +12,7 @@ app.set('view engine', 'ejs');
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-mongoose.connect("mongodb://localhost:27017/todolistDB", { useNewUrlParser: true });
+mongoose.connect("mongodb://localhost:27017/todolistDB", { useNewUrlParser: true, useUnifiedTopology: true });
 
 const itemsSchema = {
   name: String
@@ -47,12 +47,12 @@ const List = mongoose.model("List", listSchema);
 // items to the database. Then it redirects to the home route where we display our
 // todo items retrieved from the database.
 
-app.get("/", function (req, res) {
+app.get("/", (req, res) => {
 
-  Item.find({}, function (err, foundItems) {
+  Item.find({}, (err, foundItems) => {
 
     if (foundItems.length === 0) {
-      Item.insertMany(defaultItems, function (err) {
+      Item.insertMany(defaultItems, (err) => {
         if (err) {
           console.log(err);
         } else {
@@ -71,38 +71,42 @@ app.get("/", function (req, res) {
 // **** already exists. If it doesn't find it, it creates one with   ****
 // **** the default items, saves it and redirects to the customList  ****
 // **** route. If it does find the customListName it directs to the  ****
-// **** customList                                                   ****
-app.get("/:customListName", function (req, res) {
-  const customListName = _.capitalize(req.params.customListName);
+// **** customList. Note the await on list.save this is because the  ****
+// **** list.save will return null until the process of saving has   ****
+// **** completed, so the callback in the function List.findOne has  ****
+// **** to be declared as asynchronous and await the result on       ****
+// **** list.save().
 
-  List.findOne({ name: customListName }, function (err, foundList) {
-    if (!err) {
-      if (!foundList) {
-        //Create a new list
-        const list = new List({
-          name: customListName,
-          items: defaultItems
-        });
-        list.save();
-        res.redirect("/" + customListName);
-      } else {
-        //Show an existing list
+  app.get("/:customListName", (req, res) => {
+    const customListName = _.capitalize(req.params.customListName);
 
-        res.render("list", { listTitle: foundList.name, newListItems: foundList.items });
+    List.findOne({ name: customListName }, async (err, foundList) => {
+      if (!err) {
+        if (foundList) {
+          res.render("list", { listTitle: foundList.name, newListItems: foundList.items });
+        } else {
+          const list = new List({
+            name: customListName,
+            items: defaultItems
+          })
+
+          await list.save((err) => {
+            if (err) return `There was an error saving the list. ${err}`;
+            res.redirect(`/${customListName}`);
+          });
+        }
       }
-    }
-  });
+    })
+  })
 
 
-
-});
 // **** This post request takes the new item from the form submitted ****
 // **** on the list page, creates the new item, then checks to see   ****
 // **** Which list it belongs to. If it's the "Today list" the item  ****
 // **** Is saved to that list and redirected to home route, else it  ****
 // **** Is added to the custom list and redirected there.            ****
 
-app.post("/", function (req, res) {
+app.post("/", (req, res) => {
 
   const itemName = req.body.newItem;
   const listName = req.body.list;
@@ -115,7 +119,7 @@ app.post("/", function (req, res) {
     item.save();
     res.redirect("/");
   } else {
-    List.findOne({ name: listName }, function (err, foundList) {
+    List.findOne({ name: listName }, (err, foundList) => {
       foundList.items.push(item);
       foundList.save();
       res.redirect("/" + listName);
@@ -127,19 +131,19 @@ app.post("/", function (req, res) {
 // **** checks if the list is "Today" and deletes the item if true. If it isn't   ****
 // **** the today list it searches for the listName, then pulls the checked item  ****
 // **** From that list's array of items.                                          ****
-app.post("/delete", function (req, res) {
+app.post("/delete", (req, res) => {
   const checkedItemId = req.body.checkbox;
   const listName = req.body.listName;
 
   if (listName === "Today") {
-    Item.findByIdAndRemove(checkedItemId, function (err) {
+    Item.findByIdAndRemove(checkedItemId, (err) => {
       if (!err) {
         console.log("Successfully deleted checked item.");
         res.redirect("/");
       }
     });
   } else {
-    List.findOneAndUpdate({ name: listName }, { $pull: { items: { _id: checkedItemId } } }, function (err, foundList) {
+    List.findOneAndUpdate({ name: listName }, { $pull: { items: { _id: checkedItemId } } }, (err, foundList) => {
       if (!err) {
         res.redirect("/" + listName);
       }
@@ -149,7 +153,7 @@ app.post("/delete", function (req, res) {
 
 });
 
-app.get("/about", function (req, res) {
+app.get("/about", (req, res) => {
   res.render("about");
 });
 
