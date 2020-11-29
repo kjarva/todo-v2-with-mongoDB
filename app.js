@@ -3,6 +3,7 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
+const _ = require("lodash");
 
 const app = express();
 
@@ -11,88 +12,137 @@ app.set('view engine', 'ejs');
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-mongoose.connect('mongodb://localhost:27017/todolistDB', { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connect("mongodb://localhost:27017/todolistDB", { useNewUrlParser: true });
 
-const itemsSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, "can't accept empty item, please try again."]
-  }
-});
+const itemsSchema = {
+  name: String
+};
 
 const Item = mongoose.model("Item", itemsSchema);
 
+
 const item1 = new Item({
-  name: "Walk the dogs"
+  name: "Welcome to your todolist!"
 });
 
 const item2 = new Item({
-  name: "Clean the kitchen"
+  name: "Hit the + button to add a new item."
 });
 
 const item3 = new Item({
-  name: "Set up gloomhaven"
+  name: "<-- Hit this to delete an item."
 });
 
 const defaultItems = [item1, item2, item3];
 
+const listSchema = {
+  name: String,
+  items: [itemsSchema]
+};
+
+const List = mongoose.model("List", listSchema);
 
 // Inside this get request  we check to see if there are any errors connecting to
 // mongo DB. If not it checks to see how many items. If zero, it adds our 3 default
-// items to the database. Then it redirests to the home route where we display our
+// items to the database. Then it redirects to the home route where we display our
 // todo items retrieved from the database.
 
 app.get("/", function (req, res) {
 
-  Item.find({}, (err, foundItems) => {
-    if (err) {
-      console.log(err);
-    }
+  Item.find({}, function (err, foundItems) {
 
-    else if (foundItems.length === 0) {
-      Item.insertMany(defaultItems, (err) => {
+    if (foundItems.length === 0) {
+      Item.insertMany(defaultItems, function (err) {
         if (err) {
           console.log(err);
         } else {
-          console.log("Succesfully added items to the database.");
+          console.log("Successfully saved default items to DB.");
         }
       });
-
       res.redirect("/");
     } else {
-      res.render("list", { listTitle: "Today", foundItems: foundItems });
+      res.render("list", { listTitle: "Today", newListItems: foundItems });
     }
   });
 
 });
 
+// **** This get request checks to see if a list of customListName   ****
+// **** already exists. If it doesn't find it, it creates one with   ****
+// **** the default items, saves it and redirects to the customList  ****
+// **** route. If it does find the customListName it directs to the  ****
+// **** customList                                                   ****
+app.get("/:customListName", function (req, res) {
+  const customListName = _.capitalize(req.params.customListName);
+
+  List.findOne({ name: customListName }, function (err, foundList) {
+    if (!err) {
+      if (!foundList) {
+        //Create a new list
+        const list = new List({
+          name: customListName,
+          items: defaultItems
+        });
+        list.save();
+        res.redirect("/" + customListName);
+      } else {
+        //Show an existing list
+
+        res.render("list", { listTitle: foundList.name, newListItems: foundList.items });
+      }
+    }
+  });
+
+
+
+});
 // **** This post request takes the new item from the form submitted ****
-// **** on the list page and then adds it to the mongo DB database   ****
+// **** on the list page, creates the new item, then checks to see   ****
+// **** Which list it belongs to. If it's the "Today list" the item  ****
+// **** Is saved to that list and redirected to home route, else it  ****
+// **** Is added to the custom list and redirected there.            ****
+
 app.post("/", function (req, res) {
 
-  const item = req.body.newItem;
+  const itemName = req.body.newItem;
+  const listName = req.body.list;
 
-  Item.create({ name: item });
-  res.redirect("/");
-});
-
-// **** This post request watches for a checkbox to change state (checked) ****
-// **** gets the _id of the item then makes a delete request from the DB   ****
-app.post("/delete", (req, res) => {
-  const checkedItemId = req.body.checkbox;
-
-  Item.findByIdAndRemove({ _id: checkedItemId }, (err, deleted) => {
-    if (err) {
-      console.log(err);
-    } else {
-      console.log("Deleted record ", deleted)
-    }
-    res.redirect("/");
+  const item = new Item({
+    name: itemName
   });
+
+  if (listName === "Today") {
+    item.save();
+    res.redirect("/");
+  } else {
+    List.findOne({ name: listName }, function (err, foundList) {
+      foundList.items.push(item);
+      foundList.save();
+      res.redirect("/" + listName);
+    });
+  }
 });
 
-app.get("/work", function (req, res) {
-  res.render("list", { listTitle: "Work List", items: allItems });
+app.post("/delete", function (req, res) {
+  const checkedItemId = req.body.checkbox;
+  const listName = req.body.listName;
+
+  if (listName === "Today") {
+    Item.findByIdAndRemove(checkedItemId, function (err) {
+      if (!err) {
+        console.log("Successfully deleted checked item.");
+        res.redirect("/");
+      }
+    });
+  } else {
+    List.findOneAndUpdate({ name: listName }, { $pull: { items: { _id: checkedItemId } } }, function (err, foundList) {
+      if (!err) {
+        res.redirect("/" + listName);
+      }
+    });
+  }
+
+
 });
 
 app.get("/about", function (req, res) {
