@@ -123,6 +123,10 @@ app.post("/", function (req, res) {
   }
 });
 
+// **** Post request takes the checked item and list name from the submitted form ****
+// **** checks if the list is "Today" and deletes the item if true. If it isn't   ****
+// **** the today list it searches for the listName, then pulls the checked item  ****
+// **** From that list's array of items.                                          ****
 app.post("/delete", function (req, res) {
   const checkedItemId = req.body.checkbox;
   const listName = req.body.listName;
